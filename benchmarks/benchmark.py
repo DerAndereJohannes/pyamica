@@ -56,7 +56,7 @@ def _load_data() -> torch.Tensor:
     if not FDT_FILE.exists():
         raise FileNotFoundError(
             f"Memorize.fdt not found at {FDT_FILE}.\n"
-            "Copy data/Memorize.fdt into the python-package/data/ directory to run the benchmark."
+            "Copy data/Memorize.fdt into the data/ directory to run the benchmark."
         )
     raw = np.fromfile(FDT_FILE, dtype="float32").reshape(N_SAMPLES, N_CH)
     return torch.from_numpy(raw.astype(np.float64))
@@ -135,7 +135,7 @@ DISPLAY_HEADERS = [
     "n_iter",
     "iter 1 (ms)",
     f"grad ms (2-{NEWT_START})",
-    f"newt ms ({NEWT_START+1}-{N_ITER})",
+    f"newt ms ({NEWT_START + 1}-{N_ITER})",
     "total (ms)",
     "final LL",
     "spd/iter",
@@ -176,6 +176,7 @@ def _save_csv(rows: list[dict], path: Path) -> None:
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
+
         def f2(v):
             return f"{v:.2f}" if v is not None else ""
 
@@ -189,7 +190,9 @@ def _save_csv(rows: list[dict], path: Path) -> None:
                     "iter_1_ms": f2(r.get("iter_1_ms")),
                     "grad_ms": f2(r.get("grad_ms_raw")),
                     "newt_ms": f2(r.get("newt_ms_raw")),
-                    "total_ms": f"{int(r['total_ms_raw'])}" if r.get("total_ms_raw") is not None else "",
+                    "total_ms": f"{int(r['total_ms_raw'])}"
+                    if r.get("total_ms_raw") is not None
+                    else "",
                     "final_ll": f"{r['ll_raw']:.6f}" if r.get("ll_raw") is not None else "",
                     "speedup_iter": f2(r.get("speedup_iter_raw")),
                     "speedup_total": f2(r.get("speedup_total_raw")),
@@ -326,7 +329,7 @@ def _run_fortran(sysinfo: dict[str, str]) -> dict | None:
 
     if proc is None or proc.returncode != 0:
         rc = proc.returncode if proc else "n/a"
-        stderr = (proc.stderr[:300] if proc else "")
+        stderr = proc.stderr[:300] if proc else ""
         print(f"  Fortran failed (rc={rc}): {stderr}")
         return None
 
@@ -453,7 +456,7 @@ def main() -> None:
     print("Notes:")
     print("  - 'iter 1' includes torch.compile tracing overhead for compiled runs.")
     print(f"  - 'grad ms' = mean of iters 2-{NEWT_START} (gradient phase, iter 1 excluded).")
-    print(f"  - 'newt ms' = mean of iters {NEWT_START+1}-{N_ITER} (Newton phase).")
+    print(f"  - 'newt ms' = mean of iters {NEWT_START + 1}-{N_ITER} (Newton phase).")
     print("  - 'spd/iter' = Fortran newt ms / backend newt ms.")
     print("  - 'spd/total' = Fortran total / backend total (iter 1 included).")
     print("  - Speedup >1x means faster than Fortran; <1x means slower.")

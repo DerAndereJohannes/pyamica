@@ -70,7 +70,7 @@ on their wiki covers what it does, why it works, and how to interpret multi-mode
 
 ```bash
 git clone https://github.com/DerAndereJohannes/pyamica
-cd pyamica/python-package
+cd pyamica/
 pip install -e ".[mne,dev]"
 ```
 
@@ -78,7 +78,7 @@ With uv:
 
 ```bash
 git clone https://github.com/DerAndereJohannes/pyamica
-cd pyamica/python-package
+cd pyamica/
 uv sync --extra mne --extra dev
 ```
 
