@@ -142,6 +142,62 @@ def score_dipolarity(mne_ica, inst) -> 'np.ndarray':
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Mutual information helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _mi_matrix(data: 'np.ndarray', n_bins: int = 30) -> 'np.ndarray':
+    """Pairwise mutual information matrix for a (n, T) data array (nats)."""
+    import numpy as np
+    n  = data.shape[0]
+    mi = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i + 1, n):
+            c_xy = np.histogram2d(data[i], data[j], bins=n_bins)[0]
+            p_xy = c_xy / c_xy.sum()
+            p_x  = p_xy.sum(axis=1, keepdims=True)
+            p_y  = p_xy.sum(axis=0, keepdims=True)
+            mask = p_xy > 0
+            val  = float(np.sum(p_xy[mask] * np.log(p_xy[mask] / (p_x * p_y)[mask])))
+            mi[i, j] = mi[j, i] = max(0.0, val)
+    return mi
+
+
+def score_mutual_information(mne_ica, inst, n_bins: int = 30) -> 'np.ndarray':
+    """
+    Compute the pairwise mutual information matrix between IC time series.
+
+    Mutual information (MI) measures statistical dependence between two
+    signals: zero means complete independence, larger values indicate
+    stronger dependence. ICA aims to minimise MI between components, so
+    a well-fitted decomposition should produce a matrix that is close to
+    zero everywhere off the diagonal.
+
+    MI is estimated from a joint histogram with *n_bins* per dimension.
+    The estimator is biased towards zero for small T; use at least
+    T = 1000 samples for reliable values.
+
+    Works with any fitted ``mne.preprocessing.ICA`` object, regardless of
+    the decomposition method (AMICA, Infomax, extended Infomax, etc.).
+
+    Parameters
+    ----------
+    mne_ica : mne.preprocessing.ICA
+        A fitted MNE ICA object (any method).
+    inst : mne.io.BaseRaw or mne.BaseEpochs
+        Data to extract IC time series from.
+    n_bins : int
+        Number of histogram bins per dimension. Default 30.
+
+    Returns
+    -------
+    mi : np.ndarray, shape (n_components, n_components)
+        Symmetric matrix of pairwise MI values in nats. Diagonal is zero.
+    """
+    sources = mne_ica.get_sources(inst).get_data()   # (n_comp, T)
+    return _mi_matrix(sources, n_bins=n_bins)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main class
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -694,6 +750,47 @@ class AmicaICA:
         if self._model is None:
             raise RuntimeError("Call fit() before score_dipolarity().")
         return score_dipolarity(self.get_mne_ica(model_idx), inst)
+
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def score_mutual_information(
+        self, inst, model_idx: int = 0, n_bins: int = 30
+    ) -> 'np.ndarray':
+        """
+        Compute the pairwise mutual information matrix between IC time series.
+
+        Mutual information (MI) measures statistical dependence between two
+        signals: zero means complete independence, larger values indicate
+        stronger dependence. ICA aims to minimise MI between components, so
+        a well-fitted decomposition should produce a matrix that is close to
+        zero everywhere off the diagonal.
+
+        MI is estimated from a joint histogram with *n_bins* per dimension.
+        The estimator is biased towards zero for small T; use at least
+        T = 1000 samples for reliable values.
+
+        Parameters
+        ----------
+        inst : mne.io.BaseRaw or mne.BaseEpochs
+            Data to extract IC time series from.
+        model_idx : int
+            Which AMICA model to score. Default 0.
+        n_bins : int
+            Number of histogram bins per dimension. Default 30.
+
+        Returns
+        -------
+        mi : np.ndarray, shape (n_components, n_components)
+            Symmetric matrix of pairwise MI values in nats. Diagonal is zero.
+
+        Raises
+        ------
+        RuntimeError
+            If fit() has not been called yet.
+        """
+        if self._model is None:
+            raise RuntimeError("Call fit() before score_mutual_information().")
+        return score_mutual_information(self.get_mne_ica(model_idx), inst, n_bins)
 
     # ─────────────────────────────────────────────────────────────────────────
 
