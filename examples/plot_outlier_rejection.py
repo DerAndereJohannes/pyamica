@@ -148,9 +148,18 @@ print(f"Missed spikes:                    {n_missed}")
 ll_plain = model_plain.ll_history().numpy()
 ll_rej   = model_rej.ll_history().numpy()
 
+reject_iters = range(
+    model_rej.reject_start,
+    model_rej.reject_start + model_rej.num_reject * model_rej.reject_int,
+    model_rej.reject_int,
+)
+
 fig, ax = plt.subplots(figsize=(8, 3.5))
 ax.plot(ll_plain, color="steelblue", lw=1.4, label="No rejection")
 ax.plot(ll_rej,   color="tomato",    lw=1.4, label="With rejection (5 events)")
+for i, it in enumerate(reject_iters):
+    ax.axvline(it, color="tomato", lw=0.8, linestyle="--", alpha=0.6,
+               label="Rejection event" if i == 0 else None)
 ax.set_xlabel("Iteration")
 ax.set_ylabel("Log-likelihood (nats / kept sample / component)")
 ax.set_title("Convergence: rejection yields higher LL on clean samples")
