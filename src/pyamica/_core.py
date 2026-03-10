@@ -291,18 +291,27 @@ class AMICA:
 
     # ── checkpoint helpers ────────────────────────────────────────────────────
 
-    def _save_checkpoint(self, path: str, it: int,
+    def _save_checkpoint(self, base_path: str, it: int,
                          lrate: float, lrate0: float,
                          newtrate: float, rholrate0: float,
                          numdecs: int, numincs: int,
-                         newton_active: bool) -> None:
-        """Save current model state and loop variables to a .npz checkpoint."""
+                         newton_active: bool,
+                         n_rej_done: int = 0) -> None:
+        """Save current model state and loop variables to a .npz checkpoint.
+
+        The file is written to ``{base_path[:-4]}_{it:06d}.npz`` so that each
+        checkpoint has a unique name that encodes the iteration number.
+        """
         import numpy as np
+        stem = base_path[:-4] if base_path.endswith('.npz') else base_path
+        path = f"{stem}_{it:06d}.npz"
         arrays: dict = {}
         for attr in ['W_', 'A_', 'gm_', 'alpha_', 'mu_', 'sbeta_', 'rho_', 'c_']:
             val = getattr(self, attr, None)
             if val is not None:
                 arrays[attr] = val.cpu().numpy()
+        if self._rej_mask_ is not None:
+            arrays['_rej_mask_'] = self._rej_mask_.cpu().numpy()
         # LL/nd history up to current iter
         if self.LL_ is not None:
             arrays['LL_'] = self.LL_[:it].cpu().numpy()
@@ -317,16 +326,25 @@ class AMICA:
         arrays['_numdecs']      = np.array(numdecs)
         arrays['_numincs']      = np.array(numincs)
         arrays['_newton_active']= np.array(newton_active)
+        arrays['_n_rej_done']   = np.array(n_rej_done)
         np.savez_compressed(path, **arrays)
 
-    def _load_checkpoint(self, path: str) -> Optional[dict]:
-        """Load a checkpoint.  Returns loop state dict or None if not found."""
+    def _load_checkpoint(self, base_path: str) -> Optional[dict]:
+        """Load the latest checkpoint matching ``base_path``.
+
+        Scans for files named ``{base_path[:-4]}_{it:06d}.npz`` and loads the
+        one with the highest iteration number.  Returns a loop state dict or
+        None if no matching file is found.
+        """
         import numpy as np
+        import glob
         from pathlib import Path as _P
-        if not _P(path).exists():
+        stem    = base_path[:-4] if base_path.endswith('.npz') else base_path
+        matches = sorted(glob.glob(f"{stem}_*.npz"))
+        if not matches:
             return None
+        path = matches[-1]   # lexicographic sort puts highest iter last
         data = np.load(path)
-        dev  = self.device
         state: dict = {
             'it':           int(data['_it']),
             'lrate':        float(data['_lrate']),
@@ -336,15 +354,17 @@ class AMICA:
             'numdecs':      int(data['_numdecs']),
             'numincs':      int(data['_numincs']),
             'newton_active':bool(data['_newton_active']),
+            'n_rej_done':   int(data['_n_rej_done']) if '_n_rej_done' in data else 0,
         }
         # Store tensors as numpy arrays; applied after _init_params allocates buffers
         tensors = {}
         for attr in ['W_', 'A_', 'gm_', 'alpha_', 'mu_', 'sbeta_', 'rho_', 'c_']:
             if attr in data:
                 tensors[attr] = data[attr]
-        state['_tensors'] = tensors
-        state['_LL'] = data['LL_'] if 'LL_' in data else None
-        state['_nd'] = data['nd_'] if 'nd_' in data else None
+        state['_tensors']   = tensors
+        state['_LL']        = data['LL_']       if 'LL_'       in data else None
+        state['_nd']        = data['nd_']       if 'nd_'       in data else None
+        state['_rej_mask']  = data['_rej_mask_'] if '_rej_mask_' in data else None
         return state
 
     # ── device / dtype helper ─────────────────────────────────────────────────
@@ -909,6 +929,12 @@ class AMICA:
             numincs       = ckpt_state['numincs']
             newton_active = ckpt_state['newton_active']
             start_iter    = ckpt_state['it'] + 1
+            n_rej_done    = ckpt_state.get('n_rej_done', 0)
+            if ckpt_state['_rej_mask'] is not None:
+                self._rej_mask_ = torch.from_numpy(
+                    ckpt_state['_rej_mask']).to(device=self.device)
+            else:
+                self._rej_mask_ = None
         else:
             lrate         = self.lrate
             lrate0        = self.lrate0
@@ -918,11 +944,11 @@ class AMICA:
             numincs       = 0
             newton_active = False
             start_iter    = 1
+            n_rej_done    = 0
+            self._rej_mask_ = None
 
         leave         = False
         self.iter_times_ = []
-        self._rej_mask_ = None
-        n_rej_done      = 0
 
         _im = torch.inference_mode()
         _im.__enter__()
@@ -1028,7 +1054,8 @@ class AMICA:
                 if ckpt_path is not None and ckpt_every > 0:
                     self._save_checkpoint(ckpt_path, it, lrate, lrate0,
                                           newtrate, rholrate0,
-                                          numdecs, numincs, newton_active)
+                                          numdecs, numincs, newton_active,
+                                          n_rej_done)
                 break
 
             # ── Newton correction + lrate ramp (mirrors Fortran update_params)
@@ -1064,7 +1091,8 @@ class AMICA:
             if ckpt_path is not None and ckpt_every > 0 and it % ckpt_every == 0:
                 self._save_checkpoint(ckpt_path, it, lrate, lrate0,
                                       newtrate, rholrate0,
-                                      numdecs, numincs, newton_active)
+                                      numdecs, numincs, newton_active,
+                                      n_rej_done)
 
         _im.__exit__(None, None, None)
 
