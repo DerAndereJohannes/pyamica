@@ -79,7 +79,9 @@ class AmicaICA:
         Default ``'cpu'``.
     **amica_kwargs
         Passed verbatim to :class:`~pyamica.AMICA`, e.g. ``max_iter``,
-        ``lrate``, ``do_newton``, ``compile``, ``time_iters``, ``chunk_t``.
+        ``lrate``, ``do_newton``, ``compile``, ``time_iters``, ``chunk_t``,
+        ``do_reject``, ``reject_sigma``, ``num_reject``, ``reject_start``,
+        ``reject_int``.
 
     Notes
     -----

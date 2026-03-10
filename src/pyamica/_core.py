@@ -155,6 +155,27 @@ class AMICA:
         If True, skip parameter initialisation and use whatever values are
         already stored on the instance. Intended for checkpoint resumption;
         not normally needed directly. Default False.
+    do_reject : bool
+        Enable per-sample outlier rejection during training. When True, time
+        points whose per-sample log-likelihood falls more than
+        ``reject_sigma`` standard deviations below the mean are excluded from
+        the EM parameter updates for the remainder of training. The rejection
+        mask is recomputed up to ``num_reject`` times. Disabled by default,
+        matching the Fortran default (``do_reject 0``). Useful for data with
+        large transient artefacts that have not been removed beforehand.
+    reject_sigma : float
+        Number of standard deviations below the mean log-likelihood used as
+        the rejection threshold. A sample at iteration t is excluded when
+        LL_t < mean(LL) - reject_sigma * std(LL). Default 3.0.
+    num_reject : int
+        Maximum number of rejection events. After this many mask updates the
+        rejection mask is frozen for the rest of training. Default 5.
+    reject_start : int
+        Iteration at which the first rejection event may occur. Default 1.
+    reject_int : int
+        Minimum number of iterations between consecutive rejection events.
+        Default 1 (evaluate every iteration until ``num_reject`` events have
+        occurred).
     """
 
     # ── construction ─────────────────────────────────────────────────────────
@@ -198,6 +219,11 @@ class AMICA:
         checkpoint_every: int            = 0,
         checkpoint_path:  Optional[str]  = None,
         fix_init:         bool           = False,
+        do_reject:        bool           = False,
+        reject_sigma:     float          = 3.0,
+        num_reject:       int            = 5,
+        reject_start:     int            = 1,
+        reject_int:       int            = 1,
     ):
         self.n_components  = n_components
         self.n_models      = n_models
@@ -236,6 +262,11 @@ class AMICA:
         self.checkpoint_every  = checkpoint_every
         self.checkpoint_path   = checkpoint_path
         self.fix_init          = fix_init
+        self.do_reject         = do_reject
+        self.reject_sigma      = reject_sigma
+        self.num_reject        = num_reject
+        self.reject_start      = reject_start
+        self.reject_int        = reject_int
 
         # Fitted attributes (populated by fit())
         self.mean_:   Optional[Tensor] = None   # (n_orig,)
@@ -256,6 +287,7 @@ class AMICA:
         self.n_iter_:       int = 0
         self.iter_times_:   list[float] = []          # wall-time per iter (if time_iters)
         self.posteriors_:   Optional[Tensor] = None   # (M, T) model posteriors p(m|t)
+        self._rej_mask_:    Optional[Tensor] = None   # (T,) bool; kept samples during fit
 
     # ── checkpoint helpers ────────────────────────────────────────────────────
 
@@ -509,6 +541,7 @@ class AMICA:
         vbb_acc   = X.new_zeros(M, n)
 
         # ── Chunk loop over T ─────────────────────────────────────────────
+        ll_chunks: list[Tensor] = []   # populated when do_reject=True
         for start in range(0, T, chunk):
             Xc  = X[start : start + chunk]                          # (Tc, n)
 
@@ -537,10 +570,26 @@ class AMICA:
             P    = ((log_det_W + log_gm + sldet)[None] +
                     log_p_comp.sum(dim=-1))                         # (Tc, M)
             LL_t = torch.logsumexp(P, dim=-1)                      # (Tc,)
-            LL_acc = LL_acc + LL_t.sum()
+            if self.do_reject:
+                # Store full-T LL for computing the rejection threshold; the
+                # threshold uses unmasked likelihoods so previously rejected
+                # samples (which are far from the model) stay rejected.
+                ll_chunks.append(LL_t)
 
             # posteriors
             v   = torch.softmax(P,  dim=-1)                        # (Tc, M)
+
+            # Rejection mask: zero out contributions from excluded time points.
+            # LL is also accumulated only over kept samples so that the
+            # reported LL is per-kept-sample, matching Fortran behaviour where
+            # rejected samples are removed from the dataset entirely.
+            if self._rej_mask_ is not None:
+                mk     = self._rej_mask_[start : start + LL_t.shape[0]].to(dtype=X.dtype)
+                v      = v * mk[:, None]                           # (Tc, M)
+                LL_acc = LL_acc + (LL_t * mk).sum()
+            else:
+                LL_acc = LL_acc + LL_t.sum()
+
             z   = torch.softmax(z0, dim=-1)                        # (Tc,M,n,J)
             z   = z + 1e-15
             z   = z / z.sum(dim=-1, keepdim=True)
@@ -586,14 +635,18 @@ class AMICA:
             vbb_acc   = vbb_acc   + (v[..., None] * b * b).sum(dim=0)
 
         # ── Finalise ──────────────────────────────────────────────────────
-        LL      = LL_acc / (T * n)
+        # T_eff = number of kept (non-rejected) samples.  Nv_acc.sum() equals
+        # T_eff because v sums to 1 over models for each kept time point and
+        # 0 for rejected ones.  Without rejection T_eff == T exactly.
+        T_eff   = max(1.0, Nv_acc.sum().item())
+        LL      = LL_acc / (T_eff * n)
         safe_Nv = Nv_acc.clamp(min=1.0)
         I_      = torch.eye(n, dtype=X.dtype, device=X.device)[None]
         dA_dir_ = I_ - dWtmp_acc / safe_Nv[:, None, None]
         dA_     = torch.bmm(self.A_, dA_dir_)                      # (M, n, n)
         nd_     = (dA_ * dA_).sum() / (n * self.n_models)   # scalar tensor; sqrt in fit()
 
-        return dict(
+        result = dict(
             LL=LL, Nv=Nv_acc,
             dgm_numer=Nv_acc,
             dalpha_numer=usum_acc,      dalpha_denom=Nv_acc,
@@ -605,6 +658,9 @@ class AMICA:
             _usum=usum_acc, _ufp2=ufp2_acc,
             _ufpy2=ufpy2_acc, _vbb=vbb_acc,
         )
+        if self.do_reject:
+            result['LL_t'] = torch.cat(ll_chunks)                  # (T,)
+        return result
 
     # ─────────────────────────────────────────────────────────────────────────
     # M-step
@@ -865,6 +921,8 @@ class AMICA:
 
         leave         = False
         self.iter_times_ = []
+        self._rej_mask_ = None
+        n_rej_done      = 0
 
         _im = torch.inference_mode()
         _im.__enter__()
@@ -890,6 +948,30 @@ class AMICA:
             nd_it  = float(stats["nd"].item() ** 0.5)   # stored as sum-of-sq/n in e_step
             self.LL_[it - 1] = LL_it
             self.nd_[it - 1] = nd_it
+
+            # ── Outlier rejection ─────────────────────────────────────────
+            # Matches Fortran: compute LL_t, update the mask, then immediately
+            # re-run the E-step so the M-step receives statistics that already
+            # exclude the newly rejected samples.  The mask accumulates across
+            # rejection events (previously rejected samples stay rejected).
+            if (self.do_reject
+                    and n_rej_done < self.num_reject
+                    and it >= self.reject_start
+                    and (it - self.reject_start) % self.reject_int == 0):
+                LL_t   = stats['LL_t']                             # (T,) on device
+                thresh = float(LL_t.mean().item()) - self.reject_sigma * float(LL_t.std().item())
+                # Accumulate: keep samples that pass AND were not rejected before
+                prev_mask = (self._rej_mask_ if self._rej_mask_ is not None
+                             else torch.ones(T, dtype=torch.bool, device=X.device))
+                self._rej_mask_ = prev_mask & (LL_t >= thresh)
+                n_rej  = int((~self._rej_mask_).sum().item())
+                n_rej_done += 1
+                if self.verbose:
+                    print(f"  Rejection {n_rej_done}/{self.num_reject} at iter {it}: "
+                          f"{n_rej}/{T} samples excluded total "
+                          f"(thresh={thresh:.4f})")
+                # Re-run E-step so M-step uses statistics without rejected samples
+                stats = _e_step_fn(X, self.sldet_)
 
             # ── Convergence checks (BEFORE applying the update) ───────────
             # This matches the Fortran, where lrate is adjusted inside
