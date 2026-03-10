@@ -100,3 +100,12 @@ With uv:
 ```bash
 uv run pytest tests/ -v -m "not slow and not gpu"
 ```
+
+## Acknowledgements
+
+This repository includes the pre-compiled `amica15ub` binary and default
+parameter file from the [AMICA project](https://github.com/sccn/amica) by
+Jason Palmer and contributors, used here for development and testing only.
+They are not distributed as part of the installable package.
+That binary is licensed under the BSD 2-Clause License; see
+[LICENSES/sccn-amica.txt](LICENSES/sccn-amica.txt) for the full license text.
