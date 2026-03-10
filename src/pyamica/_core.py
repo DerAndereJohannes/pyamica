@@ -809,6 +809,7 @@ class AMICA:
                           f"- skipping fit.")
                 with torch.inference_mode():
                     self._compute_posteriors(X)
+                self._sort_outputs()
                 return self
 
         # ── CPU optimisations ─────────────────────────────────────────────
@@ -993,6 +994,9 @@ class AMICA:
         with torch.inference_mode():
             self._compute_posteriors(X)
 
+        # Sort models by decreasing gm_, components by decreasing variance
+        self._sort_outputs()
+
         # Restore CPU state
         if _prev_threads is not None:
             torch.set_num_threads(_prev_threads)
@@ -1042,6 +1046,78 @@ class AMICA:
 
         # (T, M) → (M, T) so posteriors_[m] gives the time series for model m
         self.posteriors_ = torch.cat(v_chunks, dim=0).T.contiguous()
+
+    def _compute_svar(self, m: int) -> "Tensor":
+        """
+        Variance explained by each component in model m.
+
+        Mirrors MATLAB's loadmodout15 svar computation:
+        source_variance × squared column norm of the full-channel mixing matrix.
+
+        Used by _sort_outputs() to order components highest-to-lowest after fit.
+        """
+        rho   = self.rho_[m]    # (n, J)
+        mu    = self.mu_[m]     # (n, J)
+        sbeta = self.sbeta_[m]  # (n, J)
+        alpha = self.alpha_[m]  # (n, J)
+
+        # GGD source variance: E[y²] = Σ_j α_j (μ_j² + Γ(3/ρ_j) / (Γ(1/ρ_j) β_j²))
+        g3_over_g1 = torch.lgamma(3.0 / rho).exp() / torch.lgamma(1.0 / rho).exp()
+        src_var = (alpha * (mu ** 2 + g3_over_g1 / sbeta ** 2)).sum(dim=-1)  # (n,)
+
+        # Squared column norm of full-channel mixing: ||V D^{½} A[:,i]||² = Σ_k d_k A[k,i]²
+        if self.pca_vals_ is not None:
+            col_norm_sq = (self.pca_vals_[:, None] * self.A_[m] ** 2).sum(dim=0)  # (n,)
+        else:
+            col_norm_sq = (self.A_[m] ** 2).sum(dim=0)
+
+        return src_var * col_norm_sq
+
+    def _sort_outputs(self) -> None:
+        """
+        Sort models by decreasing gm_ and components by decreasing variance.
+
+        Called once at the end of fit(), after _compute_posteriors().
+
+        In the original Fortran implementation the binary writes parameters in
+        raw fit order; sorting is applied by the MATLAB loader loadmodout15.m
+        as a post-processing step.  Here the equivalent sorting is baked into
+        fit() so that both AMICA and AmicaICA always return sorted outputs
+        without a separate loading step.
+
+        After this call:
+        - Model 0 is always the most probable model (highest gm_).
+        - Component 0 within each model is the highest-variance component.
+        """
+        M = self.n_models
+
+        # ── Sort models by descending gm_ ─────────────────────────────────
+        gm_order = self.gm_.argsort(descending=True)  # (M,)
+
+        def _sm(t: "Tensor") -> "Tensor":
+            return t[gm_order]
+
+        self.gm_    = _sm(self.gm_)
+        self.W_     = _sm(self.W_)
+        self.A_     = _sm(self.A_)
+        self.c_     = _sm(self.c_)
+        self.alpha_ = _sm(self.alpha_)
+        self.mu_    = _sm(self.mu_)
+        self.sbeta_ = _sm(self.sbeta_)
+        self.rho_   = _sm(self.rho_)
+        if self.posteriors_ is not None:
+            self.posteriors_ = _sm(self.posteriors_)
+
+        # ── Sort components within each model by descending svar ──────────
+        for m in range(M):
+            order = self._compute_svar(m).argsort(descending=True)  # (n,)
+            self.W_[m]     = self.W_[m][order]        # reorder rows of W
+            self.A_[m]     = self.A_[m][:, order]     # reorder columns of A
+            self.c_[m]     = self.c_[m][order]
+            self.alpha_[m] = self.alpha_[m][order]
+            self.mu_[m]    = self.mu_[m][order]
+            self.sbeta_[m] = self.sbeta_[m][order]
+            self.rho_[m]   = self.rho_[m][order]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Inference

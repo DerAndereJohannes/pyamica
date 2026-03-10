@@ -319,12 +319,10 @@ class AmicaICA:
         Parameters
         ----------
         model_idx : int
-            0-indexed model.  Pass -1 for the dominant model (highest ``gm_``).
+            0-indexed model.  Model 0 is always the most probable model after fit().
         """
         if self._model is None:
             raise RuntimeError("Call fit() before get_mne_ica().")
-        if model_idx == -1:
-            model_idx = int(self._model.gm_.argmax().item())
         if model_idx not in self._mne_icas:
             self._mne_icas[model_idx] = self.to_mne_ica(model_idx)
         return self._mne_icas[model_idx]
@@ -808,12 +806,13 @@ class AmicaICA:
         """
         Build and return a fitted ``mne.preprocessing.ICA`` object.
 
-        For multi-model fits (n_models > 1), call once per model:
-            ica0 = amica_ica.to_mne_ica(model_idx=0)
-            ica1 = amica_ica.to_mne_ica(model_idx=1)
+        After fit(), AMICA models are sorted so that model 0 is always the most
+        probable model (highest ``gm_``) and components within each model are
+        ordered by decreasing variance explained.  For multi-model fits, call
+        once per model:
 
-        The dominant model (highest overall weight) can be found with:
-            dominant = int(amica_ica._model.gm_.argmax())
+            ica0 = amica_ica.to_mne_ica(model_idx=0)   # most probable model
+            ica1 = amica_ica.to_mne_ica(model_idx=1)
 
         AMICA's ZCA sphere and W matrix are decomposed into MNE's internal
         PCA + ICA representation:
@@ -828,9 +827,8 @@ class AmicaICA:
         Parameters
         ----------
         model_idx : int
-            Which AMICA model to export (0-indexed).  Default 0.
-            Pass -1 to automatically select the dominant model
-            (highest overall weight in ``gm_``).
+            Which AMICA model to export (0-indexed).  Default 0 (most probable
+            model after fit()).
 
         Returns
         -------
@@ -849,8 +847,6 @@ class AmicaICA:
                and m.pca_vals_ is not None and m.mean_ is not None, \
                "AMICA model is missing fitted attributes. fit() may not have completed."
 
-        if model_idx == -1:
-            model_idx = int(m.gm_.argmax().item())   # dominant model by overall weight
         if not (0 <= model_idx < m.n_models):
             raise ValueError(f"model_idx={model_idx} out of range for n_models={m.n_models}.")
 

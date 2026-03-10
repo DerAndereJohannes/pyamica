@@ -43,14 +43,12 @@ def test_get_mne_ica_cached(synthetic_raw):
     assert a is b
 
 
-def test_get_mne_ica_dominant(synthetic_raw):
-    """model_idx=-1 returns the model with highest gm_."""
+def test_model0_is_dominant(synthetic_raw):
+    """After fit(), model 0 has the highest gm_ (most probable model)."""
     ica = AmicaICA(n_models=2, max_iter=30)
     ica.fit(synthetic_raw, picks="eeg")
-    dom_idx = int(ica._model.gm_.argmax().item())
-    mne_dom = ica.get_mne_ica(-1)
-    mne_exp = ica.get_mne_ica(dom_idx)
-    assert mne_dom is mne_exp
+    gm = ica._model.gm_.cpu().numpy()
+    assert gm[0] >= gm[1], f"Model 0 should be dominant, got gm={gm}"
 
 
 # ── Unmixing / mixing identity ────────────────────────────────────────────────

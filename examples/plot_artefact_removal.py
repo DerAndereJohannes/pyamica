@@ -82,9 +82,9 @@ raw  = mne.io.RawArray(data, info, verbose=False)
 fig, axes = plt.subplots(4, 1, figsize=(12, 5), sharex=True)
 for ax, ch_idx in zip(axes, [0, 3, 6, n_eeg]):
     ax.plot(raw.times[:half], data[ch_idx, :half] * 1e6,
-            lw=0.5, color="steelblue", label="Condition 1")
+            lw=0.5, color="darkorange", label="Condition 1")
     ax.plot(raw.times[half:], data[ch_idx, half:] * 1e6,
-            lw=0.5, color="darkorange", label="Condition 2")
+            lw=0.5, color="steelblue", label="Condition 2")
     for bt in blink_times:
         ax.axvline(bt, color="red", lw=0.4, alpha=0.4)
     ax.set_ylabel(f"{ch_names[ch_idx]}\n(µV)", fontsize=7)
