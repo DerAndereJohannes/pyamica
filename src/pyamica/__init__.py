@@ -11,7 +11,7 @@ Example
     from pyamica import AMICA, AmicaICA
 """
 from pyamica._core import AMICA
-from pyamica._mne import AmicaICA
+from pyamica._mne import AmicaICA, score_dipolarity
 
-__all__ = ["AMICA", "AmicaICA"]
+__all__ = ["AMICA", "AmicaICA", "score_dipolarity"]
 from pyamica._version import __version__

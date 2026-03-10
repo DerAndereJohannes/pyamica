@@ -59,6 +59,89 @@ def _resolve_picks(info, picks):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Standalone scoring helper (works with any fitted mne.preprocessing.ICA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def score_dipolarity(mne_ica, inst) -> 'np.ndarray':
+    """
+    Score each IC by how well its topomap resembles a single dipole.
+
+    A dipolar scalp field varies roughly linearly across the electrode
+    array. This function fits a linear regression of each IC topomap onto
+    the x/y channel coordinates and returns the coefficient of
+    determination (R squared). Values close to 1 indicate a dipolar
+    pattern; values near 0 indicate a spatially diffuse or noisy map.
+
+    This is a fast proxy for dipolarity: a linear fit on x/y channel
+    positions captures the dominant spatial gradient of a single dipole
+    without requiring a full head model.
+
+    Works with any fitted ``mne.preprocessing.ICA`` object, regardless of
+    the decomposition method (AMICA, FastICA, extended Infomax, etc.).
+
+    Parameters
+    ----------
+    mne_ica : mne.preprocessing.ICA
+        A fitted MNE ICA object (any method).
+    inst : mne.io.BaseRaw or mne.BaseEpochs or mne.Evoked
+        Used only for channel position information. Channels with missing
+        or invalid positions (zero norm or NaN) are silently excluded from
+        the regression. An error is only raised when no valid positions
+        remain at all.
+
+    Returns
+    -------
+    scores : np.ndarray, shape (n_components,)
+        R squared of the linear fit for each IC topomap.
+        Higher values indicate more dipolar patterns.
+
+    Raises
+    ------
+    ValueError
+        If no EEG channels with valid positions are found. This happens
+        when no montage has been applied, since MNE initialises all
+        channel locations to zero by default. Apply a montage first,
+        e.g. ``inst.set_montage('standard_1020')``.
+    """
+    import numpy as np
+    import mne
+
+    topomaps = mne_ica.get_components()          # (n_ch, n_comp)
+
+    picks = mne.pick_types(inst.info, eeg=True, exclude='bads')
+    if len(picks) == 0:
+        raise ValueError(
+            "No EEG channels found. score_dipolarity() requires EEG "
+            "channels with positions.")
+
+    pos3d = np.array([inst.info['chs'][i]['loc'][:3] for i in picks])
+    valid = np.isfinite(pos3d).all(axis=1) & (np.linalg.norm(pos3d, axis=1) > 1e-10)
+    if not valid.any():
+        raise ValueError(
+            "No valid EEG channel positions found. Apply a montage before "
+            "calling score_dipolarity(), e.g. "
+            "inst.set_montage('standard_1020').")
+
+    pos3d    = pos3d[valid]
+    topomaps = topomaps[valid]
+
+    norms = np.linalg.norm(pos3d, axis=1, keepdims=True)
+    xy    = pos3d[:, :2] / np.where(norms > 0, norms, 1.0)
+    X_reg = np.column_stack([xy, np.ones(len(pos3d))])   # (n_ch, 3)
+
+    scores = np.empty(topomaps.shape[1])
+    for i in range(topomaps.shape[1]):
+        topo          = topomaps[:, i]
+        beta, _, _, _ = np.linalg.lstsq(X_reg, topo, rcond=None)
+        resid         = topo - X_reg @ beta
+        ss_res        = float(np.dot(resid, resid))
+        ss_tot        = float(np.dot(topo - topo.mean(), topo - topo.mean()))
+        scores[i]     = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return scores
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main class
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -565,6 +648,52 @@ class AmicaICA:
 
         print(f"  Final exclusions for model {model_idx}: {mne_ica.exclude}")
         return list(mne_ica.exclude)
+
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def score_dipolarity(self, inst, model_idx: int = 0) -> 'np.ndarray':
+        """
+        Score each IC by how well its topomap resembles a single dipole.
+
+        A dipolar scalp field varies roughly linearly across the electrode
+        array. This method fits a linear regression of each IC topomap onto
+        the x/y channel coordinates and returns the coefficient of
+        determination (R squared). Values close to 1 indicate a dipolar
+        pattern; values near 0 indicate a spatially diffuse or noisy map.
+
+        This is a fast proxy for dipolarity: a linear fit on x/y channel
+        positions captures the dominant spatial gradient of a single dipole
+        without requiring a full head model.
+
+        Parameters
+        ----------
+        inst : mne.io.BaseRaw or mne.BaseEpochs or mne.Evoked
+            Used only for channel position information. Channels with missing
+            or invalid positions (zero norm or NaN, which MNE assigns when no
+            montage is set) are silently excluded from the regression. An
+            error is only raised when no valid positions remain at all.
+        model_idx : int
+            Which AMICA model to score. Default 0.
+
+        Returns
+        -------
+        scores : np.ndarray, shape (n_components,)
+            R squared of the linear fit for each IC topomap.
+            Higher values indicate more dipolar patterns.
+
+        Raises
+        ------
+        RuntimeError
+            If fit() has not been called yet.
+        ValueError
+            If no EEG channels with valid positions are found. This happens
+            when no montage has been applied, since MNE initialises all
+            channel locations to zero by default. Apply a montage first,
+            e.g. ``inst.set_montage('standard_1020')``.
+        """
+        if self._model is None:
+            raise RuntimeError("Call fit() before score_dipolarity().")
+        return score_dipolarity(self.get_mne_ica(model_idx), inst)
 
     # ─────────────────────────────────────────────────────────────────────────
 
