@@ -1,0 +1,132 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyamica"
+dynamic = ["version"]
+description = "PyTorch AMICA: Adaptive Mixture Independent Component Analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+authors = [
+    {name = "Johannes Herforth", email = "johannes@herforth.net"}
+]
+keywords = ["ICA", "independent component analysis", "EEG", "AMICA", "blind source separation", "MNE", "neuroscience"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14"
+]
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "matplotlib>=3.4",
+    "psutil>=5.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/DerAndereJohannes/pyamica"
+Repository = "https://github.com/DerAndereJohannes/pyamica"
+Issues = "https://github.com/DerAndereJohannes/pyamica/issues"
+
+[project.optional-dependencies]
+mne = ["mne>=1.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
+    "mne>=1.0",
+]
+docs = [
+    "sphinx>=7.0",
+    "furo",
+    "sphinx-copybutton",
+    "sphinx-gallery",
+    "mne>=1.0",
+    "pillow",
+    "scipy>=1.10",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/pyamica/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyamica"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/examples",
+  "/docs",
+  "/README.md",
+  "/LICENSE",
+  "/LICENSES",
+]
+exclude = [
+  "/docs/_build",
+  "/docs/_generated",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W = pycodestyle, F = pyflakes, I = isort, UP = pyupgrade, PL = pylint
+select = ["E", "W", "F", "I", "UP", "PL"]
+ignore = [
+    "C901",    # complexity - EM loop and math code is naturally complex
+    "PLR0912", # too many branches
+    "PLR0913", # too many arguments (AMICA has many hyperparameters)
+    "PLR0915", # too many statements
+    "PLR0914", # too many local variables
+    "PLC0415", # allow imports inside functions (e.g. psutil, optional deps)
+    "PLR2004", # allow magic values (numerical constants throughout)
+    "PLR0911", # allow many return statements
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403"]  # allow re-exports in __init__ files
+
+[tool.ruff.lint.pylint]
+max-args = 20  # AMICA.__init__ has ~20 hyperparameters
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["pyamica"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.uv]
+managed = true
+package = true
+python-downloads = "auto"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests requiring the Fortran binary or large dataset (deselect with '-m not slow')",
+    "gpu: marks tests requiring a CUDA/MPS/XPU device (deselect with '-m not gpu')",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

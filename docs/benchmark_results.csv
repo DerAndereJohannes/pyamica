@@ -1,0 +1,6 @@
+backend,device,compiled,n_iter,iter_1_ms,grad_ms,newt_ms,total_ms,final_ll,speedup_iter,speedup_total
+Fortran,AMD Ryzen 9 7950X 16-Core Processor,yes,100,580.00,584.69,752.60,66860,-2.360825,1.00,1.00
+PyTorch/CPU,AMD Ryzen 9 7950X 16-Core Processor,no,100,1673.75,1655.78,1658.01,165707,-2.360827,0.45,0.40
+PyTorch/CPU,AMD Ryzen 9 7950X 16-Core Processor,yes,100,7231.37,784.01,611.83,76239,-2.360828,1.23,0.88
+PyTorch/CUDA,NVIDIA GeForce RTX 5070 Ti (15.5 GB VRAM),no,100,180.61,159.71,159.78,15995,-2.360836,4.71,4.18
+PyTorch/CUDA,NVIDIA GeForce RTX 5070 Ti (15.5 GB VRAM),yes,100,910.56,129.47,114.70,12989,-2.360841,6.56,5.15

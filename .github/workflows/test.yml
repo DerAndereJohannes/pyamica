@@ -1,0 +1,63 @@
+name: 🏭 Tests
+
+# NOTE: GPU tests and Fortran comparison tests are NOT run in CI.
+#
+# GPU tests (pytest -m gpu):
+#   Require a physical CUDA / MPS / XPU device. Run locally with:
+#     uv run pytest tests/ -v -m gpu
+#
+# Fortran comparison tests (pytest -m slow):
+#   Require the amica15ub binary and Memorize.fdt (~87 MB), which are not
+#   checked into the repository. Run locally with:
+#     uv run pytest tests/ -v -m slow
+
+on:
+  push:
+    branches:
+      - trunk
+  pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Tests
+        run: |
+          uv run pytest tests/ \
+            -v \
+            -m "not slow and not gpu" \
+            --tb=short \
+            --cov=pyamica \
+            --cov-report=term-missing \
+            --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          fail_ci_if_error: false
+          files: coverage.xml
