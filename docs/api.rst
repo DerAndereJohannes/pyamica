@@ -1,4 +1,4 @@
-API reference
+API Reference
 =============
 
 Core
@@ -14,7 +14,7 @@ Core
 .. minigallery:: pyamica.AMICA
    :add-heading:
 
-MNE wrapper
+MNE Wrapper
 -----------
 
 .. autoclass:: AmicaICA

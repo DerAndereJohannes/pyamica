@@ -25,7 +25,7 @@ uv add pyamica
 uv add "pyamica[mne]"
 ```
 
-## Quick start
+## Quick Start
 
 ```python
 import torch
@@ -69,7 +69,7 @@ Jason A. Palmer and the SCCN team. The canonical reference is:
 The [AMICA introduction](https://github.com/sccn/amica/wiki/AMICA-Introduction)
 on their wiki covers what it does, why it works, and how to interpret multi-model fits.
 
-## Development install
+## Development Install
 
 ```bash
 git clone https://github.com/DerAndereJohannes/pyamica

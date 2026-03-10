@@ -1,5 +1,5 @@
 """
-Basic AMICA fit
+Basic AMICA Fit
 ===============
 
 Fit a single-model AMICA (equivalent to Infomax ICA) on synthetic data.
@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from pyamica import AMICA
 
 # %%
-# Generate synthetic data
+# Generate Synthetic Data
 # -----------------------
 # Mix 8 independent Laplacian sources with a random matrix.
 
@@ -27,7 +27,7 @@ data    = (A_true @ sources).T.astype("float64")   # (T, n_ch)
 X       = torch.from_numpy(data)
 
 # %%
-# Raw data
+# Raw Data
 # --------
 # A look at the first 4 channels.  Because the sources are Laplacian,
 # the mixture has occasional large spikes.
@@ -54,7 +54,7 @@ print(f"Iterations:           {model.n_iter_}")
 print(f"Final log-likelihood: {model.ll_history()[-1]:.6f}")
 
 # %%
-# Log-likelihood curve
+# Log-Likelihood Curve
 # --------------------
 # The LL should increase monotonically and flatten as the model converges.
 
@@ -67,7 +67,7 @@ fig.tight_layout()
 plt.show()
 
 # %%
-# Sphering matrix
+# Sphering Matrix
 # ---------------
 # AMICA pre-whitens the data with a ZCA (symmetric) sphering matrix
 # ``S = V D^{-1/2} V^T`` (eigendecomposition of the sample covariance).

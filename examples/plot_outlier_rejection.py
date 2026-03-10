@@ -1,5 +1,5 @@
 """
-Outlier rejection
+Outlier Rejection
 =================
 
 Demonstrates the ``do_reject`` feature on heavily contaminated synthetic data.
@@ -25,7 +25,7 @@ torch.manual_seed(0)
 rng = np.random.default_rng(42)
 
 # %%
-# Synthetic data with heavy contamination
+# Synthetic Data with Heavy Contamination
 # ----------------------------------------
 # Eight independent Laplacian sources mixed by a random matrix.
 # Columns of A_true are unit-normalised so channel variance is ~1.
@@ -48,7 +48,7 @@ contaminated[spike_idx] *= amp
 X = torch.from_numpy(contaminated)
 
 # %%
-# Raw data
+# Raw Data
 # --------
 # Y-axis clipped to 4 standard deviations of the clean signal.  At 15x
 # amplitude the spikes go far off-screen; their positions are marked with
@@ -78,7 +78,7 @@ fig.tight_layout()
 plt.show()
 
 # %%
-# Fit without and with rejection
+# Fit Without and With Rejection
 # --------------------------------
 
 model_plain = AMICA(n_models=1, max_iter=200, verbose=False)
@@ -96,7 +96,7 @@ print(f"With rejection:     final LL = {model_rej.ll_history()[-1]:.4f}  "
       f"({n_rejected}/{T} samples excluded, {n_spikes} true spikes)")
 
 # %%
-# Rejection mask overlaid on raw data
+# Rejection Mask Overlaid on Raw Data
 # ------------------------------------
 # The same channel as the top row above, now with rejected time points
 # shaded in red.  The mask correctly captures the spike positions.
@@ -139,7 +139,7 @@ print(f"False rejections (clean samples): {n_false}")
 print(f"Missed spikes:                    {n_missed}")
 
 # %%
-# Log-likelihood convergence
+# Log-Likelihood Convergence
 # ---------------------------
 # Both LL curves are per-kept-sample, so they are directly comparable.
 # Without rejection the model spends capacity fitting the spike distribution
@@ -160,7 +160,7 @@ fig.tight_layout()
 plt.show()
 
 # %%
-# Mixing matrix recovery
+# Mixing Matrix Recovery
 # -----------------------
 # The estimated A is projected back to sensor space and matched to the true
 # columns using the Hungarian algorithm (optimal one-to-one assignment).

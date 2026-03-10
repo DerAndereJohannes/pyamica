@@ -1,5 +1,5 @@
 """
-Artefact removal with multi-model AMICA
+Artefact Removal with Multi-Model AMICA
 ========================================
 
 Demonstrates the full artefact-removal workflow on data with two distinct
@@ -21,7 +21,7 @@ from pyamica import AmicaICA
 mne.set_log_level("WARNING")
 
 # %%
-# Synthetic two-condition EEG with blinks
+# Synthetic Two-Condition EEG with Blinks
 # -----------------------------------------
 # Two 15-second conditions with **different scalp mixing matrices** - mimicking
 # two experimental conditions with different functional connectivity (e.g.
@@ -73,7 +73,7 @@ info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
 raw  = mne.io.RawArray(data, info, verbose=False)
 
 # %%
-# Raw data
+# Raw Data
 # ---------
 # Both conditions share the same amplitude distribution (Laplacian), but their
 # inter-channel correlations differ because ``A1 ≠ A2``.  Blinks (red lines)
@@ -115,7 +115,7 @@ gm = ica._model.gm_.numpy()
 print(f"Global model weights: {gm.round(3)}")
 
 # %%
-# Model dominance
+# Model Dominance
 # ----------------
 # The two models split cleanly at 15 s.  Unlike uniform-vs-Laplacian data,
 # blink peaks do not bleed into the wrong model because both models carry
@@ -127,7 +127,7 @@ ax.legend(loc="upper right")
 plt.show()
 
 # %%
-# The ``review()`` workflow
+# The ``review()`` Workflow
 # --------------------------
 # In practice, review each model interactively:
 #
@@ -144,7 +144,7 @@ plt.show()
 # decomposition.
 
 # %%
-# Identify blink component per model
+# Identify Blink Component per Model
 # ------------------------------------
 # Because the blink occupies the 8th independent direction of both ``A1`` and
 # ``A2``, one IC per model has near-perfect VEOG correlation.
@@ -173,7 +173,7 @@ fig.tight_layout()
 plt.show()
 
 # %%
-# Set per-model exclusions and apply
+# Set Per-Model Exclusions and Apply
 # ------------------------------------
 # Exclude the blink component from each model independently, then apply.
 # :meth:`~pyamica.AmicaICA.apply` uses per-sample posterior assignment to
@@ -193,7 +193,7 @@ raw_clean = raw.copy()
 ica.apply(raw_clean)
 
 # %%
-# Before and after
+# Before and After
 # -----------------
 # EEG001 (most blink-contaminated channel in this realisation) before and after
 # removal.  Blinks are suppressed in both conditions.

@@ -1,5 +1,5 @@
 """
-MNE-Python workflow
+MNE-Python Workflow
 ===================
 
 Fit :class:`~pyamica.AmicaICA` on synthetic EEG data with two mixture models,
@@ -27,7 +27,7 @@ from pyamica import AmicaICA
 mne.set_log_level("WARNING")
 
 # %%
-# Synthetic two-segment Raw
+# Synthetic Two-Segment Raw
 # -------------------------
 # 8 EEG channels, 250 Hz, 8 seconds.
 # First 4 s: spatially uniform activity, bounded and sub-Gaussian (std ≈ 5.8 µV).
@@ -53,7 +53,7 @@ data = np.concatenate([
 raw = mne.io.RawArray(data, info, verbose=False)
 
 # %%
-# Raw data
+# Raw Data
 # --------
 # The two data segments are clearly visible: the first half has a hard amplitude
 # ceiling (uniform), while the second half has occasional large spikes
@@ -87,7 +87,7 @@ print(f"Fitted {ica._model.n_iter_} iterations")
 print(f"Global model weights: {ica._model.gm_.numpy().round(3)}")
 
 # %%
-# Model posteriors
+# Model Posteriors
 # ----------------
 # Raw per-sample posteriors p(model | t).  The transition at 4 s and the
 # occasional ambiguous samples in the Laplacian half are both visible.
@@ -98,7 +98,7 @@ ax.legend()
 plt.show()
 
 # %%
-# Model dominance (stacked area)
+# Model Dominance (Stacked Area)
 # ------------------------------
 # Gaussian smoothing (0.2 s) suppresses per-sample noise while preserving
 # the coarse structure.  Ambiguous samples appear as mixed-colour bands.
@@ -109,7 +109,7 @@ ax.legend(loc="upper right")
 plt.show()
 
 # %%
-# Separation accuracy
+# Separation Accuracy
 # -------------------
 
 post     = ica._model.posteriors_.numpy()   # (2, T)
@@ -124,7 +124,7 @@ print(f"First-half  accuracy: {acc_first:.1%}  (model {m0} dominant)")
 print(f"Second-half accuracy: {acc_second:.1%}  (model {m1} dominant)")
 
 # %%
-# Reconstruct the signal
+# Reconstruct the Signal
 # ----------------------
 # With no components excluded, :meth:`~pyamica.AmicaICA.apply` is a perfect
 # round-trip: at each time point the dominant model's W and A = inv(W) cancel
@@ -143,7 +143,7 @@ print(f"Max absolute error: {max_err:.2e} V")
 print(f"Max relative error: {rel_err:.2e}  (expect < 1e-10)")
 
 # %%
-# Original vs reconstructed
+# Original vs Reconstructed
 # -------------------------
 # The overlay and residual confirm the round-trip is numerically exact.
 

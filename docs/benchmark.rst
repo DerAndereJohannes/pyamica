@@ -54,7 +54,7 @@ Notes
 * LL values are comparable across backends: same dataset, same number of
   iterations, same algorithm settings.
 
-Running the benchmark
+Running the Benchmark
 ---------------------
 
 .. code-block:: bash

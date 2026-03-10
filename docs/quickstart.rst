@@ -1,7 +1,7 @@
-Quick start
+Quick Start
 ===========
 
-Low-level PyTorch API
+Low-Level PyTorch API
 ---------------------
 
 :class:`~pyamica.AMICA` operates directly on PyTorch tensors.
@@ -31,7 +31,7 @@ Input shape is ``(T, n_channels)``: samples x channels.
    # Source activations for each model
    sources = model.transform(X)  # (T, n_models, n_components)
 
-MNE-Python wrapper
+MNE-Python Wrapper
 ------------------
 
 :class:`~pyamica.AmicaICA` wraps :class:`~pyamica.AMICA` with an MNE-compatible
@@ -52,7 +52,7 @@ interface.  It accepts :class:`mne.io.Raw` and :class:`mne.Epochs` objects.
    )
    ica.fit(raw, picks="eeg")
 
-Visualising model dominance
+Visualising Model Dominance
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
@@ -63,7 +63,7 @@ Visualising model dominance
    # Line plot of raw posteriors
    ica.plot_model_posteriors()
 
-Inspecting and removing artefacts
+Inspecting and Removing Artefacts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
@@ -78,7 +78,7 @@ Inspecting and removing artefacts
    # Remove artefacts and reconstruct (uses the dominant model per sample)
    ica.apply(raw)
 
-Saving and loading
+Saving and Loading
 ------------------
 
 .. code-block:: python
@@ -88,7 +88,7 @@ Saving and loading
    from pyamica import AmicaICA
    ica2 = AmicaICA.load("my_ica.amica.npz")
 
-Multi-model vs single-model
+Multi-Model vs Single-Model
 ---------------------------
 
 With ``n_models=1``, pyamica behaves like standard ICA (equivalent to

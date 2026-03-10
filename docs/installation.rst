@@ -23,7 +23,7 @@ With `uv <https://docs.astral.sh/uv/>`_:
    uv add pyamica
    uv add "pyamica[mne]"
 
-GPU support
+GPU Support
 -----------
 
 .. warning::
@@ -47,7 +47,7 @@ for the correct index URL.
 Pass ``device="cuda"`` (or ``"mps"`` on Apple Silicon) when constructing
 :class:`~pyamica.AMICA` or :class:`~pyamica.AmicaICA`.
 
-Development install
+Development Install
 -------------------
 
 .. code-block:: bash
@@ -71,7 +71,7 @@ Running the tests:
    pytest tests/ -v -m "not slow and not gpu"
    uv run pytest tests/ -v -m "not slow and not gpu"   # uv
 
-Building the documentation
+Building the Documentation
 --------------------------
 
 .. code-block:: bash
