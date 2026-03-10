@@ -48,12 +48,15 @@ ica.apply(raw)
 
 ## Background
 
-pyamica started as a weekend project: a translation of the original Fortran
-AMICA implementation ([sccn/amica](https://github.com/sccn/amica)) into
-PyTorch, with an MNE-Python wrapper to make it usable in modern EEG pipelines.
-It was also used as a practical test of LLM-assisted code translation. The
-translation was supported by Claude Sonnet 4.6 with a lot of back-and-forth,
-and turned out good enough (I think) to publish.
+pyamica is a pure Python reimplementation of AMICA built on PyTorch, with an
+MNE-Python wrapper to make it usable in modern EEG pipelines. It runs on CPU
+and GPU alike and slots in wherever `mne.preprocessing.ICA` would be used.
+
+It started as a weekend project and a practical test of LLM-assisted code
+translation from the original Fortran implementation
+([sccn/amica](https://github.com/sccn/amica)). The translation was supported
+by Claude Sonnet 4.6 with a lot of back-and-forth, and turned out good enough
+(I think) to publish.
 
 All credit for the algorithm, theory, and original implementation goes to
 Jason A. Palmer and the SCCN team. The canonical reference is:
