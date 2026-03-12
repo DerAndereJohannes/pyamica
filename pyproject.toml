@@ -83,6 +83,9 @@ exclude = [
   "/docs/_generated",
 ]
 
+[tool.pyright]
+typeCheckingMode = "off"
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

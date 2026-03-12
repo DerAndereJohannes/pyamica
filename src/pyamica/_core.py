@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Optional, Tuple
 
 import torch
 from torch import Tensor
@@ -182,7 +181,7 @@ class AMICA:
 
     def __init__(
         self,
-        n_components: Optional[int] = None,
+        n_components: int | None = None,
         n_models:     int   = 1,
         n_mix:        int   = 3,
         max_iter:     int   = 2000,
@@ -213,11 +212,11 @@ class AMICA:
         verbose:      bool  = True,
         dtype:        torch.dtype = torch.float64,
         device:       str   = "cpu",
-        chunk_t:          Optional[int]  = None,
+        chunk_t:          int | None  = None,
         compile:          bool           = False,
         time_iters:       bool           = False,
         checkpoint_every: int            = 0,
-        checkpoint_path:  Optional[str]  = None,
+        checkpoint_path:  str | None  = None,
         fix_init:         bool           = False,
         do_reject:        bool           = False,
         reject_sigma:     float          = 3.0,
@@ -269,25 +268,25 @@ class AMICA:
         self.reject_int        = reject_int
 
         # Fitted attributes (populated by fit())
-        self.mean_:   Optional[Tensor] = None   # (n_orig,)
-        self.sphere_: Optional[Tensor] = None   # (n_orig, n)  sphering matrix S
-        self.pca_vecs_: Optional[Tensor] = None  # (n_orig, n_keep) eigenvectors V
-        self.pca_vals_: Optional[Tensor] = None  # (n_keep,) eigenvalues of cov (descending)
+        self.mean_:   Tensor | None = None   # (n_orig,)
+        self.sphere_: Tensor | None = None   # (n_orig, n)  sphering matrix S
+        self.pca_vecs_: Tensor | None = None  # (n_orig, n_keep) eigenvectors V
+        self.pca_vals_: Tensor | None = None  # (n_keep,) eigenvalues of cov (descending)
         self.sldet_:  float = 0.0               # log|det S|  (LL contribution)
-        self.A_:      Optional[Tensor] = None   # (M, n, n)  mixing matrices
-        self.W_:      Optional[Tensor] = None   # (M, n, n)  unmixing matrices
-        self.c_:      Optional[Tensor] = None   # (M, n)     DC bias (source space)
-        self.gm_:     Optional[Tensor] = None   # (M,)       model weights
-        self.alpha_:  Optional[Tensor] = None   # (M, n, J)  mixture weights
-        self.mu_:     Optional[Tensor] = None   # (M, n, J)  mixture means
-        self.sbeta_:  Optional[Tensor] = None   # (M, n, J)  inverse scales (1/σ)
-        self.rho_:    Optional[Tensor] = None   # (M, n, J)  shape parameters
-        self.LL_:           Optional[Tensor] = None   # (max_iter,) LL history
-        self.nd_:           Optional[Tensor] = None   # (max_iter,) gradient-norm history
+        self.A_:      Tensor | None = None   # (M, n, n)  mixing matrices
+        self.W_:      Tensor | None = None   # (M, n, n)  unmixing matrices
+        self.c_:      Tensor | None = None   # (M, n)     DC bias (source space)
+        self.gm_:     Tensor | None = None   # (M,)       model weights
+        self.alpha_:  Tensor | None = None   # (M, n, J)  mixture weights
+        self.mu_:     Tensor | None = None   # (M, n, J)  mixture means
+        self.sbeta_:  Tensor | None = None   # (M, n, J)  inverse scales (1/σ)
+        self.rho_:    Tensor | None = None   # (M, n, J)  shape parameters
+        self.LL_:           Tensor | None = None   # (max_iter,) LL history
+        self.nd_:           Tensor | None = None   # (max_iter,) gradient-norm history
         self.n_iter_:       int = 0
         self.iter_times_:   list[float] = []          # wall-time per iter (if time_iters)
-        self.posteriors_:   Optional[Tensor] = None   # (M, T) model posteriors p(m|t)
-        self._rej_mask_:    Optional[Tensor] = None   # (T,) bool; kept samples during fit
+        self.posteriors_:   Tensor | None = None   # (M, T) model posteriors p(m|t)
+        self._rej_mask_:    Tensor | None = None   # (T,) bool; kept samples during fit
 
     # ── checkpoint helpers ────────────────────────────────────────────────────
 
@@ -329,7 +328,7 @@ class AMICA:
         arrays['_n_rej_done']   = np.array(n_rej_done)
         np.savez_compressed(path, **arrays)
 
-    def _load_checkpoint(self, base_path: str) -> Optional[dict]:
+    def _load_checkpoint(self, base_path: str) -> dict | None:
         """Load the latest checkpoint matching ``base_path``.
 
         Scans for files named ``{base_path[:-4]}_{it:06d}.npz`` and loads the
@@ -338,7 +337,6 @@ class AMICA:
         """
         import numpy as np
         import glob
-        from pathlib import Path as _P
         stem    = base_path[:-4] if base_path.endswith('.npz') else base_path
         matches = sorted(glob.glob(f"{stem}_*.npz"))
         if not matches:
@@ -377,7 +375,7 @@ class AMICA:
     # Preprocessing
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _compute_sphere(self, X: Tensor) -> Tuple[Tensor, Tensor, float, int]:
+    def _compute_sphere(self, X: Tensor) -> tuple[Tensor, Tensor, float, int]:
         """
         PCA-whiten the data.
 
@@ -583,8 +581,10 @@ class AMICA:
                   _safe_log(self.sbeta_[None])  -
                   exponent - log_part)                              # (Tc,M,n,J)
 
-            # per-component mixture log-probability
+            # per-component mixture log-probability + mixture posteriors.
             log_p_comp = torch.logsumexp(z0, dim=-1)               # (Tc, M, n)
+            z   = torch.softmax(z0, dim=-1).clamp(min=1e-15)       # (Tc,M,n,J)
+            # z0 no longer needed after this point
 
             # model log-probability and LL contribution
             P    = ((log_det_W + log_gm + sldet)[None] +
@@ -609,10 +609,6 @@ class AMICA:
                 LL_acc = LL_acc + (LL_t * mk).sum()
             else:
                 LL_acc = LL_acc + LL_t.sum()
-
-            z   = torch.softmax(z0, dim=-1)                        # (Tc,M,n,J)
-            z   = z + 1e-15
-            z   = z / z.sum(dim=-1, keepdim=True)
 
             # score function  fp = d/dy |y|^rho
             fp  = self._score(y, rho_b)                            # (Tc,M,n,J)
@@ -649,7 +645,7 @@ class AMICA:
             drho_numer_acc = drho_numer_acc + (u * exponent * logab).sum(dim=0)
 
             # Newton accumulators
-            ufp2_acc  = ufp2_acc  + (u * fp * fp).sum(dim=0)
+            ufp2_acc  = ufp2_acc  + (ufp * fp).sum(dim=0)
             fpy_m1    = fp * y - 1.0
             ufpy2_acc = ufpy2_acc + (u * fpy_m1 * fpy_m1).sum(dim=0)
             vbb_acc   = vbb_acc   + (v[..., None] * b * b).sum(dim=0)
@@ -658,7 +654,7 @@ class AMICA:
         # T_eff = number of kept (non-rejected) samples.  Nv_acc.sum() equals
         # T_eff because v sums to 1 over models for each kept time point and
         # 0 for rejected ones.  Without rejection T_eff == T exactly.
-        T_eff   = max(1.0, Nv_acc.sum().item())
+        T_eff   = Nv_acc.sum().clamp(min=1.0)
         LL      = LL_acc / (T_eff * n)
         safe_Nv = Nv_acc.clamp(min=1.0)
         I_      = torch.eye(n, dtype=X.dtype, device=X.device)[None]
@@ -778,7 +774,7 @@ class AMICA:
 
         Falls back to the natural gradient if the Hessian is not positive definite.
         """
-        M, n, _ = self.A_.shape
+        _, n, _ = self.A_.shape
         Nv      = stats["Nv"].clamp(min=1.0)                       # (M,)
         usum    = stats["_usum"].clamp(min=1.0)                    # (M,n,J)
         baralpha = usum / Nv[:, None, None]                        # (M,n,J)
@@ -857,7 +853,7 @@ class AMICA:
         if ckpt_every > 0 and ckpt_path is None:
             ckpt_path = "amica_checkpoint.npz"
 
-        ckpt_state: Optional[dict] = None
+        ckpt_state: dict | None = None
         if ckpt_path is not None:
             ckpt_state = self._load_checkpoint(ckpt_path)
 
@@ -948,6 +944,7 @@ class AMICA:
             self._rej_mask_ = None
 
         leave         = False
+        _t_iter: float = 0.0
         self.iter_times_ = []
 
         _im = torch.inference_mode()
@@ -1125,7 +1122,6 @@ class AMICA:
         is all ones (trivial, but kept for API consistency).
         """
         T, _  = X.shape
-        M, J  = self.n_models, self.n_mix
         chunk = self.chunk_t if self.chunk_t is not None else T
 
         wc        = torch.einsum("mij,mj->mi", self.W_, self.c_)
