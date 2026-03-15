@@ -843,6 +843,13 @@ class AMICA:
         X = self._t(X)
         T, n_orig = X.shape
 
+        if not torch.isfinite(X).all():
+            raise ValueError(
+                "Input data contains NaN or Inf values. "
+                "Check for dead/flat channels, unclipped artefacts, or bad epochs "
+                "before fitting AMICA."
+            )
+
         if self.verbose:
             print(f"AMICA  T={T}  n_orig={n_orig}  "
                   f"M={self.n_models}  J={self.n_mix}")

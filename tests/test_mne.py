@@ -142,6 +142,33 @@ def test_find_bads_eog_returns_list():
     assert hasattr(scores, "__len__")
 
 
+def _make_raw_with_ecg(rng=None):
+    """Synthetic Raw with one dedicated ECG channel."""
+    if rng is None:
+        rng = np.random.default_rng(77)
+    n_eeg, T, sfreq = 8, 2000, 250.0
+    eeg = rng.uniform(-1, 1, (n_eeg, T)) * 1e-5
+    # ECG: ~1 Hz heartbeat-like pulse train
+    t = np.arange(T) / sfreq
+    ecg = (np.sin(2 * np.pi * 1.1 * t) * 1e-3).reshape(1, T)
+    data = np.concatenate([eeg, ecg], axis=0)
+    info = mne.create_info(
+        [f"EEG{i:03d}" for i in range(n_eeg)] + ["ECG"],
+        sfreq=sfreq,
+        ch_types=["eeg"] * n_eeg + ["ecg"],
+    )
+    return mne.io.RawArray(data, info, verbose=False)
+
+
+def test_find_bads_ecg_returns_list():
+    raw = _make_raw_with_ecg()
+    ica = AmicaICA(max_iter=50)
+    ica.fit(raw, picks="eeg")
+    bads, scores = ica.find_bads_ecg(raw, ch_name="ECG")
+    assert isinstance(bads, list)
+    assert hasattr(scores, "__len__")
+
+
 # ── Plotting (non-interactive, return type) ────────────────────────────────────
 
 def test_plot_model_posteriors_returns_axes(synthetic_raw):
@@ -253,6 +280,67 @@ def test_unmixing_mixing_identity_rank_deficient():
     eye_approx = mne_ica.unmixing_matrix_ @ mne_ica.mixing_matrix_
     err = np.max(np.abs(eye_approx - np.eye(n)))
     assert err < 1e-10, f"unmixing @ mixing ≠ I for rank-deficient: max|err| = {err:.3e}"
+
+
+def test_fit_on_epochs():
+    """AmicaICA.fit() works on mne.BaseEpochs and sets _fit_type correctly."""
+    rng = np.random.default_rng(7)
+    n_ch, n_ep, n_t = 8, 20, 200
+    data = rng.normal(0, 1e-5, (n_ep, n_ch, n_t))
+    info = mne.create_info(
+        [f"EEG{i:03d}" for i in range(n_ch)], sfreq=250.0, ch_types="eeg"
+    )
+    epochs = mne.EpochsArray(data, info, verbose=False)
+
+    ica = AmicaICA(max_iter=10, verbose=False)
+    ica.fit(epochs, picks="eeg")
+
+    assert ica._fit_type == "epc"
+    assert ica._n_samples == n_ep * n_t
+    assert ica._model.W_.shape == (1, n_ch, n_ch)
+
+
+def test_save_load_rank_deficient(tmp_path):
+    """sphere_ shape (rectangular) is preserved through save/load; apply() still works."""
+    n_ch = 8
+    raw = _make_raw(n_ch)
+    raw.set_eeg_reference("average", verbose=False)
+
+    ica = AmicaICA(max_iter=10, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    ica.save(tmp_path / "rd_model")
+    ica2 = AmicaICA.load(tmp_path / "rd_model.amica.npz")
+
+    assert ica2._model.sphere_.shape == (n_ch, n_ch - 1), (
+        f"Expected sphere_ shape ({n_ch}, {n_ch - 1}) after load, "
+        f"got {ica2._model.sphere_.shape}"
+    )
+
+    raw_copy = raw.copy()
+    ica2.apply(raw_copy)
+    orig  = raw.get_data(picks="eeg")
+    recon = raw_copy.get_data(picks="eeg")
+    rel_err = np.sqrt(np.mean((orig - recon) ** 2)) / np.sqrt(np.mean(orig ** 2))
+    assert rel_err < 1e-10, f"Round-trip after save/load failed: rel_err={rel_err:.3e}"
+
+
+def test_apply_exclusion_changes_data(synthetic_raw):
+    """Excluding a component in apply() actually modifies the reconstructed signal."""
+    ica = AmicaICA(max_iter=50)
+    ica.fit(synthetic_raw, picks="eeg")
+
+    ica.get_mne_ica(0).exclude = [0]
+    raw_excl = synthetic_raw.copy()
+    ica.apply(raw_excl)
+
+    orig = synthetic_raw.get_data(picks="eeg")
+    excl = raw_excl.get_data(picks="eeg")
+    rel_diff = np.sqrt(np.mean((orig - excl) ** 2)) / np.sqrt(np.mean(orig ** 2))
+    assert rel_diff > 0.01, (
+        f"Excluding component 0 should visibly change the signal, "
+        f"got rel_diff={rel_diff:.3e}"
+    )
 
 
 def test_roundtrip_rank_deficient():

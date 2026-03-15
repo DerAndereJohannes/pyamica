@@ -39,6 +39,22 @@ def _three_regime_tensor(seed: int = 1) -> torch.Tensor:
     return torch.from_numpy(data.T)   # (T, n_ch)
 
 
+# ── Input validation ──────────────────────────────────────────────────────────
+
+def test_fit_raises_on_nan():
+    X = _two_regime_tensor()
+    X[0, 0] = float("nan")
+    with pytest.raises(ValueError, match="NaN or Inf"):
+        AMICA(max_iter=5, verbose=False).fit(X)
+
+
+def test_fit_raises_on_inf():
+    X = _two_regime_tensor()
+    X[10, 3] = float("inf")
+    with pytest.raises(ValueError, match="NaN or Inf"):
+        AMICA(max_iter=5, verbose=False).fit(X)
+
+
 # ── Basic fit ─────────────────────────────────────────────────────────────────
 
 def test_fit_m1_runs():
@@ -126,6 +142,20 @@ def test_fit_transform_consistent():
     S1 = model.fit_transform(X)
     S2 = model.transform(X)
     assert torch.allclose(S1, S2), "fit_transform and transform disagree"
+
+
+def test_transform_shape_rank_deficient():
+    """transform() returns correct shape when sphere_ is rectangular (rank-deficient)."""
+    X = _two_regime_tensor()
+    X_def = X.clone()
+    X_def[:, -1] = X_def[:, 0]   # duplicate channel → rank N_CH - 1
+
+    model = AMICA(n_models=2, max_iter=5, verbose=False)
+    model.fit(X_def)
+
+    n_keep = N_CH - 1
+    S = model.transform(X_def)
+    assert S.shape == (T, 2, n_keep), f"Expected (T, 2, {n_keep}), got {S.shape}"
 
 
 # ── Sphering ─────────────────────────────────────────────────────────────────
