@@ -313,9 +313,28 @@ class AmicaICA:
         X = torch.from_numpy(data.T.astype('float64'))             # (T, n_ch)
         self._n_samples = X.shape[0]
 
+        # ── determine effective rank ───────────────────────────────────────
+        # mne.compute_rank() excludes bad channels and subtracts the number
+        # of active projectors (SSP, average reference), giving the true
+        # rank of the data that will be delivered by get_data() above.
+        if self.n_components is not None:
+            n_comp = self.n_components
+        else:
+            ch_types  = {mne.channel_type(inst.info, int(i)) for i in picks_idx}
+            rank_dict = mne.compute_rank(inst, verbose=False)
+            n_comp    = min(
+                sum(rank_dict.get(t, 0) for t in ch_types),
+                len(picks_idx),
+            )
+            if n_comp < len(picks_idx):
+                verbose = self.amica_kwargs.get('verbose', True)
+                if verbose:
+                    print(f"  Rank-deficient data detected by mne.compute_rank: "
+                          f"n_components set to {n_comp} "
+                          f"(of {len(picks_idx)} channels).")
+
         # ── fit AMICA ──────────────────────────────────────────────────────
         self._mne_icas = {}   # invalidate any previously cached MNE ICA objects
-        n_comp = self.n_components or data.shape[0]
         self._model = AMICA(
             n_components = n_comp,
             n_models     = self.n_models,
@@ -1101,30 +1120,39 @@ class AmicaICA:
         #   3. sources = unmixing_matrix_ @ x_pca
         #   [reconstruction reverses in opposite order, multiplying by pre_whitener_ at the end]
         #
-        # AMICA forward pass (µV-scale):
-        #   sources = W @ sphere @ (x_µV - mean_µV)
-        #           = W @ V @ diag(D⁻½) @ V.T @ (x_µV - mean_µV)
+        # Two cases depending on whether we used ZCA or PCA whitening:
         #
-        # Setting pre_whitener_ = 1/scale means x_pre = x_V * scale = x_µV.
-        # Then with pca_components_ = V.T and pca_mean_ = mean_µV:
-        #   x_pca  = V.T @ (x_µV - mean_µV)                             ✓
-        #   unmixing_matrix_ = W @ V @ diag(D⁻½)  (no scale factor)     ✓
-        #   mixing_matrix_   = diag(D^½) @ V.T @ A = (V*d_sqrt).T @ A   ✓
+        # Full-rank (n_comp == n_ch): ZCA sphere  S = V D⁻½ V.T  (square)
+        #   sources = W @ V D⁻½ V.T @ (x_µV - mean)
+        #   x_pca   = V.T @ (x_µV - mean)
+        #   unmixing_matrix_ = W @ V @ diag(D⁻½) = W @ (V * d_invsqrt)    (n_ch, n_ch)
+        #   mixing_matrix_   = diag(D½) @ V.T @ A = (V * d_sqrt).T @ A     (n_ch, n_ch)
+        #   Round-trip: V @ (V.T@x) = x  (V square orthogonal)              ✓
         #
-        # Round-trip (no exclusions, full rank):
-        #   pre_whitener_ * (V @ (V.T@(x_µV-mean_µV)) + mean_µV) = (1/scale)*x_µV = x_V  ✓
+        # Rank-deficient (n_comp < n_ch): PCA whitening  S = V_k D_k⁻½  (rectangular)
+        #   sources = W @ D_k⁻½ @ V_k.T @ (x_µV - mean)
+        #   x_pca   = V_k.T @ (x_µV - mean)                     (n_keep,)
+        #   unmixing_matrix_ = W @ diag(D_k⁻½) = W * d_invsqrt  (n_keep, n_keep)
+        #   mixing_matrix_   = diag(D_k½) @ A  = d_sqrt * A      (n_keep, n_keep)
+        #   Back-projection uses pseudoinverse S⁺ = D_k½ V_k.T:
+        #     x_recon = pca_components_.T @ (mixing_ @ x_src) + mean
+        #             = V_k @ D_k½ @ A @ x_src + mean             ✓
 
-        n_ch             = V.shape[0]
-        d_sqrt           = np.sqrt(d_vals)
-        pre_whitener_    = np.full((n_ch, 1), 1.0 / scale)         # (n_ch, 1): V → µV
+        n_ch   = V.shape[0]
+        d_sqrt = np.sqrt(d_vals)
+        pre_whitener_           = np.full((n_ch, 1), 1.0 / scale)  # (n_ch, 1): V → µV
         pca_components_         = V.T.copy()                        # (n_comp, n_ch)
         pca_explained_variance_ = d_vals                            # (n_comp,) in µV²
         pca_mean_               = m.mean_.cpu().numpy()             # (n_ch,)   in µV
 
-        # V * d_invsqrt: col j of V scaled by d_invsqrt[j]  =  V @ diag(D⁻½)
-        unmixing_matrix_ = W @ (V * d_invsqrt)                     # (n_comp, n_comp)
-        # inv(unmixing) = diag(D^½) @ V.T @ inv(W) = (V * d_sqrt).T @ A
-        mixing_matrix_   = (V * d_sqrt).T @ A                      # (n_comp, n_comp)
+        if n_comp == n_ch:
+            # Full-rank ZCA: V is square — rotate through eigenvector basis
+            unmixing_matrix_ = W @ (V * d_invsqrt)                 # (n_ch, n_ch)
+            mixing_matrix_   = (V * d_sqrt).T @ A                  # (n_ch, n_ch)
+        else:
+            # Rank-deficient PCA whitening: V is rectangular — no rotation term
+            unmixing_matrix_ = W * d_invsqrt[None, :]              # (n_keep, n_keep)
+            mixing_matrix_   = d_sqrt[:, None] * A                 # (n_keep, n_keep)
 
         # ── Construct MNE ICA and populate fitted state ────────────────────
         ica = MNE_ICA(

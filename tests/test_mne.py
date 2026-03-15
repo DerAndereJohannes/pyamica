@@ -169,3 +169,112 @@ def test_plot_model_dominance_no_smooth(synthetic_raw):
     ax = ica.plot_model_dominance(smooth_s=0.0)
     assert ax is not None
     plt.close("all")
+
+
+# ── Rank-deficient handling ───────────────────────────────────────────────────
+
+def _make_raw(n_ch: int = 8, T: int = 2000, seed: int = 0):
+    """Helper: full-rank synthetic EEG Raw (Volts)."""
+    rng = np.random.default_rng(seed)
+    data = rng.normal(0, 1e-5, (n_ch, T))
+    info = mne.create_info(
+        [f"EEG{i:03d}" for i in range(n_ch)], sfreq=250.0, ch_types="eeg"
+    )
+    return mne.io.RawArray(data, info, verbose=False)
+
+
+def test_average_reference_reduces_rank():
+    """Average-referenced EEG (rank n_ch - 1) results in n_components = n_ch - 1."""
+    n_ch = 8
+    raw = _make_raw(n_ch)
+    raw.set_eeg_reference("average", verbose=False)   # applies directly to data
+
+    ica = AmicaICA(max_iter=5, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    assert ica._model.W_.shape[1] == n_ch - 1, (
+        f"Expected {n_ch - 1} components after average ref, "
+        f"got {ica._model.W_.shape[1]}"
+    )
+
+
+def test_bad_channel_excluded_from_fit():
+    """Bad channel is excluded from picks; remaining good channels fit at full rank."""
+    n_ch = 8
+    raw = _make_raw(n_ch)
+    raw.info["bads"] = ["EEG000"]
+
+    ica = AmicaICA(max_iter=5, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    n_good = n_ch - 1
+    assert ica._model.W_.shape[1] == n_good, (
+        f"Expected {n_good} components (1 bad channel excluded), "
+        f"got {ica._model.W_.shape[1]}"
+    )
+    assert "EEG000" not in ica._ch_names
+
+
+def test_full_rank_no_reduction():
+    """Full-rank data with no projectors: n_components equals n_ch."""
+    n_ch = 8
+    raw = _make_raw(n_ch)
+
+    ica = AmicaICA(max_iter=5, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    assert ica._model.W_.shape[1] == n_ch
+    assert ica._model.sphere_.shape == (n_ch, n_ch)
+
+
+def test_explicit_n_components_respected():
+    """Explicit n_components is passed through; compute_rank is skipped."""
+    n_ch, n_req = 8, 5
+    raw = _make_raw(n_ch)
+
+    ica = AmicaICA(n_components=n_req, max_iter=5, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    assert ica._model.W_.shape[1] == n_req
+
+
+def test_unmixing_mixing_identity_rank_deficient():
+    """unmixing @ mixing ≈ I for rank-deficient (average-referenced) data."""
+    n_ch = 8
+    raw = _make_raw(n_ch)
+    raw.set_eeg_reference("average", verbose=False)
+
+    ica = AmicaICA(max_iter=50, verbose=False)
+    ica.fit(raw, picks="eeg")
+    mne_ica = ica.get_mne_ica()
+
+    n = mne_ica.n_components_
+    assert n == n_ch - 1
+    eye_approx = mne_ica.unmixing_matrix_ @ mne_ica.mixing_matrix_
+    err = np.max(np.abs(eye_approx - np.eye(n)))
+    assert err < 1e-10, f"unmixing @ mixing ≠ I for rank-deficient: max|err| = {err:.3e}"
+
+
+def test_roundtrip_rank_deficient():
+    """apply() with no exclusions reconstructs signal exactly for rank-deficient data.
+
+    With average reference applied directly to the data, the signal lives entirely
+    in the (n_ch - 1)-dimensional subspace spanned by V_k, so V_k V_k^T @ x = x
+    and the round-trip is exact (machine precision).
+    """
+    n_ch = 8
+    raw = _make_raw(n_ch)
+    raw.set_eeg_reference("average", verbose=False)   # data now genuinely rank n_ch - 1
+
+    ica = AmicaICA(max_iter=50, verbose=False)
+    ica.fit(raw, picks="eeg")
+
+    raw_copy = raw.copy()
+    ica.apply(raw_copy)
+
+    orig  = raw.get_data(picks="eeg")
+    recon = raw_copy.get_data(picks="eeg")
+    rms_err    = np.sqrt(np.mean((orig - recon) ** 2))
+    rms_signal = np.sqrt(np.mean(orig ** 2))
+    rel_err = rms_err / rms_signal
+    assert rel_err < 1e-10, f"Round-trip rel error (rank-deficient) = {rel_err:.3e}"

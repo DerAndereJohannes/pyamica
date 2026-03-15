@@ -379,15 +379,25 @@ class AMICA:
         """
         PCA-whiten the data.
 
-        Computes sphering matrix  S = V · D^{-½}  where V, D are the
-        eigenvectors / eigenvalues of the sample covariance.
+        Computes sphering matrix S from the eigenvectors/eigenvalues of the
+        sample covariance.  Two cases:
+
+        Full rank (n_keep == n_orig):
+            ZCA (symmetric) sphere  S = V D^{-1/2} V^T   shape (n_orig, n_orig)
+            Matches Fortran do_approx_sphere=1.  Data stays in sensor space.
+
+        Rank-deficient (n_keep < n_orig):
+            PCA whitening  S = V_k D_k^{-1/2}             shape (n_orig, n_keep)
+            Projects data to the n_keep-dimensional subspace, discarding the
+            directions with zero (or near-zero) variance.  Matches Fortran's
+            rank-deficient branch (numeigs < nx).
 
         Returns
         -------
-        X_sph  : (T, n_keep)    sphered data
+        X_sph  : (T, n_keep)       sphered data
         S      : (n_orig, n_keep)  sphering matrix
-        sldet  : float           log|det S|
-        n_keep : int             number of retained components
+        sldet  : float             log|det S|  (sum over kept eigenvalues)
+        n_keep : int               number of retained components
         """
         T, n_orig = X.shape
         cov       = (X.T @ X) / T                     # (n_orig, n_orig)
@@ -399,16 +409,23 @@ class AMICA:
         n_keep = self.n_components if self.n_components is not None else n_orig
         n_keep = int(min(n_keep, int((vals > 1e-15).sum().item())))
 
+        if n_keep < n_orig and self.verbose:
+            print(f"  Rank deficiency detected: reducing from {n_orig} to "
+                  f"{n_keep} components.")
+
         vals_k = vals[:n_keep]                         # (n_keep,)
         vecs_k = vecs[:, :n_keep]                      # (n_orig, n_keep)
 
-        # ZCA (symmetric) sphere: S = V D^{-1/2} V^T
-        # Matches Fortran do_approx_sphere 1: stays close to original sensor
-        # space and is invariant to eigenvector sign/ordering ambiguity.
-        S_pca  = vecs_k / vals_k.sqrt().unsqueeze(0)   # (n_orig, n_keep)  V D^{-1/2}
-        S      = S_pca @ vecs_k.T                       # (n_orig, n_orig)  V D^{-1/2} V^T
+        S_pca  = vecs_k / vals_k.sqrt().unsqueeze(0)   # (n_orig, n_keep)  V_k D_k^{-1/2}
+        if n_keep == n_orig:
+            # ZCA: map back to sensor space — square, invertible
+            S = S_pca @ vecs_k.T                       # (n_orig, n_orig)
+        else:
+            # PCA whitening: project into reduced subspace — rectangular
+            S = S_pca                                  # (n_orig, n_keep)
+
         sldet  = float(-0.5 * vals_k.log().sum().item())
-        X_sph  = X @ S                                 # (T, n_orig)
+        X_sph  = X @ S                                 # (T, n_keep)
         self.pca_vecs_ = vecs_k   # store for MNE mapping
         self.pca_vals_ = vals_k   # store for MNE mapping
         return X_sph, S, sldet, n_keep

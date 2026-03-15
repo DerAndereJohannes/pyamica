@@ -192,3 +192,55 @@ def test_posteriors_shape():
     model = AMICA(n_models=3, max_iter=10, verbose=False)
     model.fit(X)
     assert model.posteriors_.shape == (3, T)
+
+
+# ── Rank-deficient handling ───────────────────────────────────────────────────
+
+def test_sphere_full_rank():
+    """Full-rank data: sphering matrix is square (ZCA) and W has n_ch components."""
+    X = _two_regime_tensor()
+    model = AMICA(max_iter=5, verbose=False)
+    model.fit(X)
+    assert model.sphere_.shape == (N_CH, N_CH), "Expected square ZCA sphere for full-rank data"
+    assert model.W_.shape == (1, N_CH, N_CH)
+
+
+def test_sphere_rank_deficient_duplicate_channel():
+    """One channel being a copy of another reduces effective rank by 1."""
+    X = _two_regime_tensor()
+    X_def = X.clone()
+    X_def[:, -1] = X_def[:, 0]   # last channel = first → rank N_CH-1
+
+    model = AMICA(max_iter=5, verbose=False)
+    model.fit(X_def)
+
+    n_keep = N_CH - 1
+    assert model.sphere_.shape == (N_CH, n_keep), \
+        f"Expected rectangular sphere {(N_CH, n_keep)}, got {model.sphere_.shape}"
+    assert model.W_.shape == (1, n_keep, n_keep)
+
+
+def test_sphere_average_reference():
+    """Average-referenced data (rank n-1) is handled correctly."""
+    X = _two_regime_tensor()
+    X_avg = X - X.mean(dim=1, keepdim=True)   # subtract channel mean → rank N_CH-1
+
+    model = AMICA(max_iter=5, verbose=False)
+    model.fit(X_avg)
+
+    n_keep = N_CH - 1
+    assert model.sphere_.shape == (N_CH, n_keep), \
+        f"Expected rectangular sphere {(N_CH, n_keep)}, got {model.sphere_.shape}"
+    assert model.W_.shape == (1, n_keep, n_keep)
+
+
+def test_sphere_rank_deficient_n_components_explicit():
+    """Explicit n_components below full rank: shape reflects user request."""
+    X = _two_regime_tensor()
+    n_req = N_CH - 2
+
+    model = AMICA(n_components=n_req, max_iter=5, verbose=False)
+    model.fit(X)
+
+    assert model.sphere_.shape == (N_CH, n_req)
+    assert model.W_.shape == (1, n_req, n_req)
